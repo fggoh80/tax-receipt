@@ -203,7 +203,7 @@ ${cats}
 3. 一般衣服、普通鞋子不算 SPORTS，除非明确是运动器材/运动鞋。
 4. 药房买的普通药品、保健品一般不能扣税，选 OTHER（除非是医疗监测器材或疫苗）。
 5. 如能从单据看出是谁（病人名字、孩子名字、保单受保人），填 member_guess；否则填 "${cfg.members[0]}"。
-6. 金额用最终实付总额（含 SST），只填数字。日期格式 YYYY-MM-DD；看不清就填 null。
+6. 金额用最终实付总额（含 SST），只填数字。马来西亚收据日期通常是 日/月/年（DD/MM/YY 或 DD/MM/YYYY），两位数年份 YY 一律解读为 20YY（例如 31/08/26 = 2026-08-31）。今天是 ${new Date().toISOString().slice(0, 10)}，收据日期不可能晚于今天。输出格式 YYYY-MM-DD；看不清就填 null。
 7. reason 用简体中文一两句话说明归类理由；若有申报风险（例如商家看起来不是注册诊所、项目可能不符合条件），写进 warnings。
 
 只输出 JSON：
@@ -253,8 +253,12 @@ function updateCatHelp() {
   $('catHelp').textContent = r.covers;
 }
 function updateYA() {
-  const y = ($('fDate').value || '').slice(0, 4);
-  $('yaNote').textContent = y ? `将存入 YA${y}（${y} 年的花费，${+y + 1} 年报税）` : '';
+  const d = $('fDate').value || '', y = d.slice(0, 4), now = new Date();
+  let warn = '';
+  if (y && d > now.toISOString().slice(0, 10)) warn = ' ⚠ 日期在未来，请检查';
+  else if (y && +y < now.getFullYear() - 1) warn = ' ⚠ 这是 ' + (now.getFullYear() - y) + ' 年前的收据，请确认日期没读错';
+  $('yaNote').textContent = y ? `将存入 YA${y}（${y} 年的花费，${+y + 1} 年报税）${warn}` : '';
+  $('yaNote').classList.toggle('bad', !!warn);
 }
 
 async function onPick(file) {
