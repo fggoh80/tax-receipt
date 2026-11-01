@@ -15,6 +15,19 @@ const DEFAULTS = {
 
 const $ = (id) => document.getElementById(id);
 const fmt = (n) => 'RM ' + (Number(n) || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// 日期：内部一律用 YYYY-MM-DD，画面显示 日/月/年
+const dmy = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || ''); return m ? `${+m[3]}/${+m[2]}/${m[1]}` : (iso || ''); };
+function parseDmy(t) {
+  const m = /^\s*(\d{1,2})[\/.\-\s](\d{1,2})[\/.\-\s](\d{2}|\d{4})\s*$/.exec(t || '');
+  if (!m) return '';
+  const d = +m[1], mo = +m[2], y = m[3].length === 2 ? 2000 + +m[3] : +m[3];
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return '';
+  return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+// Sheets 读回来的日期可能是数字编号（1899-12-30 起算的天数）
+const cellDate = (v) => (typeof v === 'number' ? new Date(Date.UTC(1899, 11, 30) + v * 86400000).toISOString().slice(0, 10) : String(v || ''));
+function setDate(iso) { $('fDate').value = iso; $('fDateTxt').value = dmy(iso); updateYA(); }
 const relief = (id) => RELIEFS.find((r) => r.id === id) || RELIEFS[RELIEFS.length - 1];
 
 /* ---------------- 设置（本机存储） ---------------- */
@@ -265,7 +278,8 @@ function updateYA() {
   let warn = '';
   if (y && d > now.toISOString().slice(0, 10)) warn = ' ⚠ 日期在未来，请检查';
   else if (y && +y < now.getFullYear() - 1) warn = ' ⚠ 这是 ' + (now.getFullYear() - y) + ' 年前的收据，请确认日期没读错';
-  $('yaNote').textContent = y ? `将存入 YA${y}（${y} 年的花费，${+y + 1} 年报税）${warn}` : '';
+  if (!y && $('fDateTxt').value.trim()) warn = '⚠ 日期格式不对，请用 日/月/年，例如 31/8/2026';
+  $('yaNote').textContent = y ? `将存入 YA${y}（${y} 年的花费，${+y + 1} 年报税）${warn}` : warn;
   $('yaNote').classList.toggle('bad', !!warn);
 }
 
@@ -288,7 +302,7 @@ async function onPick(file) {
     $('fCat').value = ai.category_id || 'OTHER';
     $('fMember').value = cfg.members.includes(ai.member_guess) ? ai.member_guess : cfg.members[0];
     $('fPayer').value = lastPayer(); syncPayer();
-    $('fDate').value = /^\d{4}-\d{2}-\d{2}$/.test(ai.date || '') ? ai.date : new Date().toISOString().slice(0, 10);
+    setDate(/^\d{4}-\d{2}-\d{2}$/.test(ai.date || '') ? ai.date : new Date().toISOString().slice(0, 10));
     $('fAmount').value = ai.total_amount ?? '';
     $('fMerchant').value = ai.merchant || '';
     $('fDesc').value = ai.items_summary || '';
@@ -313,7 +327,7 @@ const clean = (s, n = 40) => String(s || '').replace(/[\\/:*?"<>|\n\r]+/g, ' ').
 async function onSave() {
   const btn = $('btnSave');
   const date = $('fDate').value, amount = parseFloat($('fAmount').value);
-  if (!date || isNaN(amount)) return toast('请填写日期和金额');
+  if (!date || isNaN(amount)) return toast('请填写日期（日/月/年，例如 31/8/2026）和金额');
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> 保存中…';
   try {
     await getToken(); // 先在按钮点击时取得授权，避免弹窗被拦截
@@ -427,7 +441,7 @@ async function loadSummary() {
       `<div class="rec"><span>${escapeHtml(m)}</span><span>${fmt(a)}</span></div>`).join('') || '<p class="muted">—</p>';
 
     $('sRecent').innerHTML = rows.slice(-30).reverse().map((v) =>
-      `<div class="rec"><div><b>${escapeHtml(v[2] || '收据')}</b><br><span class="muted">${escapeHtml(v[1])} · ${escapeHtml(v[5])} · ${escapeHtml(v[6])}</span></div>`
+      `<div class="rec"><div><b>${escapeHtml(v[2] || '收据')}</b><br><span class="muted">${escapeHtml(dmy(cellDate(v[1])))} · ${escapeHtml(v[5])} · ${escapeHtml(v[6])}</span></div>`
       + `<div style="text-align:right">${fmt(v[3])}<br><a href="https://drive.google.com/file/d/${encodeURIComponent(v[9])}/view" target="_blank" rel="noopener">打开</a></div></div>`
     ).join('') || '<p class="muted">—</p>';
     summaryDirty = false;
@@ -474,7 +488,10 @@ function bind() {
   $('inCamera').onchange = (e) => { onPick(e.target.files[0]); e.target.value = ''; };
   $('inFile').onchange = (e) => { onPick(e.target.files[0]); e.target.value = ''; };
   $('fCat').onchange = updateCatHelp;
-  $('fDate').onchange = updateYA;
+  $('fDate').onchange = () => setDate($('fDate').value);
+  $('fDateTxt').addEventListener('input', () => { $('fDate').value = parseDmy($('fDateTxt').value); updateYA(); });
+  $('fDateTxt').addEventListener('blur', () => { if ($('fDate').value) $('fDateTxt').value = dmy($('fDate').value); });
+  $('btnPick').onclick = () => { try { $('fDate').showPicker(); } catch { $('fDate').focus(); $('fDate').click(); } };
   $('btnSave').onclick = onSave;
   $('btnCancel').onclick = () => showOnly('pickCard');
   $('btnNext').onclick = () => showOnly('pickCard');

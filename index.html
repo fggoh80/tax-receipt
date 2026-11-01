@@ -116,7 +116,12 @@
         <label>归属家人</label>
         <select id="fMember"></select>
         <div class="row">
-          <div><label>收据日期</label><input type="date" id="fDate" required></div>
+          <div><label>收据日期（日/月/年）</label>
+            <div style="position:relative">
+              <input id="fDateTxt" placeholder="31/8/2026" inputmode="numeric" autocomplete="off" style="padding-right:44px">
+              <button type="button" id="btnPick" aria-label="选日期" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);border:0;background:none;font-size:20px;cursor:pointer;padding:6px">📅</button>
+              <input type="date" id="fDate" tabindex="-1" aria-hidden="true" style="position:absolute;right:0;bottom:0;width:1px;height:1px;opacity:0;border:0;padding:0">
+            </div></div>
           <div><label>金额 (RM)</label><input type="number" id="fAmount" step="0.01" min="0" inputmode="decimal" required></div>
         </div>
         <label>商家 / 机构</label>
