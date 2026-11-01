@@ -108,6 +108,8 @@
       <div id="aiBox" class="ai hidden"></div>
 
       <form id="form" class="hidden" onsubmit="return false">
+        <label>报税人（报在谁的税表）</label>
+        <select id="fPayer"></select>
         <label>分类（减免项目）</label>
         <select id="fCat"></select>
         <p id="catHelp" class="muted" style="margin:6px 0 0"></p>
@@ -146,6 +148,8 @@
         <h2 style="margin:0">减免总览</h2>
         <select id="sYA" style="max-width:130px"></select>
       </div>
+      <label>报税人</label>
+      <select id="sPayer"></select>
       <p class="muted" id="sYANote"></p>
       <div class="muted">可申报减免合计（已按上限计算）</div>
       <div class="big" id="sTotal">RM 0.00</div>
@@ -181,8 +185,11 @@
       <p class="muted">Key 只保存在这台手机的浏览器里，直接发给 Google，不经过其他服务器。</p>
     </div>
     <div class="card">
-      <h2>家人名单</h2>
-      <p class="muted">一行一个。第一行是报税人本人。孩子建议写名字，方便分开。</p>
+      <h2>报税人</h2>
+      <p class="muted">一行一个，各自分开计算减免上限。例如：我、老婆。</p>
+      <textarea id="cfgPayers" style="min-height:70px"></textarea>
+      <h2 style="margin-top:18px">家人名单</h2>
+      <p class="muted">一行一个（收据是谁的花费）。孩子建议写名字，方便分开。</p>
       <textarea id="cfgMembers"></textarea>
       <label>Drive 主文件夹名称</label>
       <input id="cfgRoot">

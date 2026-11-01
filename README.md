@@ -12,6 +12,7 @@
 LHDN 税务收据/
 ├── 收据总账 Ledger            ← Google Sheets，每个 YA 一个分页
 ├── YA2026/
+│   └── 我/   （每位报税人一个文件夹，下面才是减免项目）
 │   ├── 02 运动 Sukan/
 │   │   └── 本人/2026-10-28_Decathlon Johor Bahru_RM189.90.jpg
 │   ├── 08 父母医疗与护理 Perubatan Ibu Bapa/

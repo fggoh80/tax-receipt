@@ -7,10 +7,10 @@
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 const LEDGER_NAME = '收据总账 Ledger';
 const HEADER = ['上传时间', '收据日期', '商家', '金额(RM)', '分类代码', '分类名称', '家人', '内容/备注',
-  '文件', '文件ID', 'AI信心', '文件指纹', 'AI建议分类'];
+  '文件', '文件ID', 'AI信心', '文件指纹', 'AI建议分类', '报税人'];
 const DEFAULTS = {
   clientId: '', geminiKey: '', model: 'gemini-flash-latest',
-  members: ['本人', '配偶', '孩子1', '父亲', '母亲'], rootName: 'LHDN 税务收据',
+  payers: ['我', '老婆'], members: ['我', '老婆', '孩子1', '父亲', '母亲'], rootName: 'LHDN 税务收据',
 };
 
 const $ = (id) => document.getElementById(id);
@@ -141,13 +141,15 @@ async function readRows(ya) {
   const id = await ledger(false);
   if (!id) return [];
   try {
-    const r = await gfetch(`https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${encodeURIComponent(`'YA${ya}'!A2:M`)}?valueRenderOption=UNFORMATTED_VALUE`);
+    const r = await gfetch(`https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${encodeURIComponent(`'YA${ya}'!A2:N`)}?valueRenderOption=UNFORMATTED_VALUE`);
     return (r.values || []).filter((v) => v.length > 4);
   } catch (e) {
     if (String(e.message).includes('400')) return []; // 该年份分页还不存在
     throw e;
   }
 }
+
+const payerOf = (row) => (cfg.payers.includes(row[13]) ? row[13] : cfg.payers[0]);
 
 // 防止商家名称等被 Sheets 当成公式
 const safe = (s) => (/^[=+\-@]/.test(String(s || '')) ? "'" + s : String(s || ''));
@@ -193,7 +195,7 @@ function buildPrompt() {
 减免分类（只能从以下 id 选一个）：
 ${cats}
 
-家人名单：${cfg.members.join('、')}（第一位是报税人本人）
+家人名单：${cfg.members.join('、')}
 
 规则：
 1. 只根据单据上看得到的内容判断；看不出是减免项目的日常花费，选 OTHER。
@@ -232,7 +234,14 @@ let current = null; // { prep, hash, ai }
 function fillSelects() {
   $('fCat').innerHTML = RELIEFS.map((r) => `<option value="${r.id}">${r.name}${r.cap ? ' · 上限 RM' + r.cap.toLocaleString() : ''}</option>`).join('');
   $('fMember').innerHTML = cfg.members.map((m) => `<option>${escapeHtml(m)}</option>`).join('');
+  const opts = cfg.payers.map((m) => `<option>${escapeHtml(m)}</option>`).join('');
+  const keep = $('sPayer').value;
+  $('fPayer').innerHTML = opts; $('sPayer').innerHTML = opts;
+  if (cfg.payers.includes(keep)) $('sPayer').value = keep;
 }
+function lastPayer() { try { const p = localStorage.getItem('tr_lastPayer'); return cfg.payers.includes(p) ? p : cfg.payers[0]; } catch { return cfg.payers[0]; } }
+// 收据是某位报税人自己的花费时，自动把报税人切换成他/她
+function syncPayer() { const m = $('fMember').value; if (cfg.payers.includes(m)) $('fPayer').value = m; }
 function escapeHtml(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 function showOnly(id) {
@@ -264,6 +273,7 @@ async function onPick(file) {
     fillSelects();
     $('fCat').value = ai.category_id || 'OTHER';
     $('fMember').value = cfg.members.includes(ai.member_guess) ? ai.member_guess : cfg.members[0];
+    $('fPayer').value = lastPayer(); syncPayer();
     $('fDate').value = /^\d{4}-\d{2}-\d{2}$/.test(ai.date || '') ? ai.date : new Date().toISOString().slice(0, 10);
     $('fAmount').value = ai.total_amount ?? '';
     $('fMerchant').value = ai.merchant || '';
@@ -294,7 +304,8 @@ async function onSave() {
   try {
     await getToken(); // 先在按钮点击时取得授权，避免弹窗被拦截
     const ya = date.slice(0, 4);
-    const r = relief($('fCat').value), member = $('fMember').value;
+    const r = relief($('fCat').value), member = $('fMember').value, payer = $('fPayer').value;
+    try { localStorage.setItem('tr_lastPayer', payer); } catch {}
     const merchant = $('fMerchant').value.trim(), desc = $('fDesc').value.trim();
 
     const existing = await readRows(ya);
@@ -305,19 +316,20 @@ async function onSave() {
 
     const root = await folder(cfg.rootName);
     const yaF = await folder('YA' + ya, root);
-    const catF = await folder(r.folder, yaF);
+    const payF = await folder(clean(payer, 30) || cfg.payers[0], yaF);
+    const catF = await folder(r.folder, payF);
     const memF = await folder(clean(member, 30) || '本人', catF);
     const name = `${date}_${clean(merchant) || '收据'}_RM${amount.toFixed(2)}.${current.prep.ext}`;
-    const descr = `${r.name} | ${member} | ${desc} | AI:${current.ai?.category_id || ''}`;
+    const descr = `报税人:${payer} | ${r.name} | ${member} | ${desc} | AI:${current.ai?.category_id || ''}`;
     const up = await uploadFile(current.prep.blob, name, memF, descr);
 
     await appendRow(ya, [
       new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Kuala_Lumpur' }), date, safe(merchant), amount,
       r.id, r.name, safe(member), safe(desc), `=HYPERLINK("${up.webViewLink}","打开")`, up.id,
-      current.ai?.confidence ?? '', current.hash, current.ai?.category_id || '',
+      current.ai?.confidence ?? '', current.hash, current.ai?.category_id || '', safe(payer),
     ]);
 
-    $('doneText').textContent = `${r.name} · ${member} · ${fmt(amount)} → YA${ya}/${r.folder}/${member}`;
+    $('doneText').textContent = `报税人：${payer} · ${r.name} · ${member} · ${fmt(amount)} → YA${ya}/${payer}/${r.folder}/${member}`;
     $('doneLink').href = up.webViewLink;
     showOnly('doneCard');
     summaryDirty = true;
@@ -343,7 +355,8 @@ async function loadSummary() {
   $('sCats').innerHTML = '<p class="muted"><span class="spinner"></span> 载入中…</p>';
   try {
     await getToken();
-    const rows = await readRows(ya);
+    const payer = $('sPayer').value || cfg.payers[0];
+    const rows = (await readRows(ya)).filter((v) => payerOf(v) === payer);
     const root = await folder(cfg.rootName);
     $('sFolder').href = 'https://drive.google.com/drive/folders/' + root;
     const lid = await ledger(false);
@@ -419,17 +432,20 @@ function go(view) {
 
 function renderSettings() {
   $('cfgClient').value = cfg.clientId; $('cfgKey').value = cfg.geminiKey; $('cfgModel').value = cfg.model;
+  $('cfgPayers').value = cfg.payers.join('\n');
   $('cfgMembers').value = cfg.members.join('\n'); $('cfgRoot').value = cfg.rootName;
   $('reliefNote').textContent = RELIEF_YEAR_NOTE;
   $('setupHint').classList.toggle('hidden', !!(cfg.clientId && cfg.geminiKey));
 }
 
 function readSettingsForm() {
+  const payers = $('cfgPayers').value.split('\n').map((s) => s.trim()).filter(Boolean);
   const members = $('cfgMembers').value.split('\n').map((s) => s.trim()).filter(Boolean);
   const clientChanged = $('cfgClient').value.trim() !== cfg.clientId;
   cfg = {
     clientId: $('cfgClient').value.trim(), geminiKey: $('cfgKey').value.trim(),
     model: $('cfgModel').value.trim() || DEFAULTS.model,
+    payers: payers.length ? payers : DEFAULTS.payers,
     members: members.length ? members : DEFAULTS.members, rootName: $('cfgRoot').value.trim() || DEFAULTS.rootName,
   };
   saveCfg(cfg);
@@ -449,7 +465,9 @@ function bind() {
   $('btnCancel').onclick = () => showOnly('pickCard');
   $('btnNext').onclick = () => showOnly('pickCard');
   $('sYA').onchange = loadSummary;
-  $('btnSaveCfg').onclick = () => { readSettingsForm(); renderSettings(); toast('设置已保存'); };
+  $('sPayer').onchange = loadSummary;
+  $('fMember').addEventListener('change', syncPayer);
+  $('btnSaveCfg').onclick = () => { readSettingsForm(); renderSettings(); fillSelects(); toast('设置已保存'); };
   $('btnConnect').onclick = async () => {
     readSettingsForm(); renderSettings();
     try { await getToken(true); await folder(cfg.rootName); toast('已连接 Google Drive ✓'); }
