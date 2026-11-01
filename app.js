@@ -175,7 +175,13 @@ async function prepareFile(file) {
   c.width = Math.round(img.naturalWidth * scale); c.height = Math.round(img.naturalHeight * scale);
   c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
   const blob = await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.85));
-  return { blob, mime: 'image/jpeg', ext: 'jpg', url: img.src };
+  // 给 AI 的版本：最长边 1280px，够读清楚文字，上传和分析都快很多
+  const s2 = Math.min(1, 1280 / Math.max(img.naturalWidth, img.naturalHeight));
+  const c2 = document.createElement('canvas');
+  c2.width = Math.round(img.naturalWidth * s2); c2.height = Math.round(img.naturalHeight * s2);
+  c2.getContext('2d').drawImage(img, 0, 0, c2.width, c2.height);
+  const aiBlob = await new Promise((res) => c2.toBlob(res, 'image/jpeg', 0.8));
+  return { blob, aiBlob, mime: 'image/jpeg', ext: 'jpg', url: img.src };
 }
 
 const toBase64 = (blob) => new Promise((res) => {
@@ -214,12 +220,14 @@ ${cats}
 async function analyze(prep) {
   if (!cfg.geminiKey) throw new Error('请先在“设置”填入 Gemini API Key');
   const body = {
-    contents: [{ parts: [{ text: buildPrompt() }, { inlineData: { mimeType: prep.mime, data: await toBase64(prep.blob) } }] }],
-    generationConfig: { responseMimeType: 'application/json', temperature: 0.1 },
+    contents: [{ parts: [{ text: buildPrompt() }, { inlineData: { mimeType: prep.mime, data: await toBase64(prep.aiBlob || prep.blob) } }] }],
+    // 读收据不需要深度推理：关掉“思考”，速度快好几倍
+    generationConfig: { responseMimeType: 'application/json', temperature: 0.1, thinkingConfig: { thinkingLevel: 'minimal' } },
   };
-  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.model || DEFAULTS.model)}:generateContent`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.geminiKey }, body: JSON.stringify(body),
-  });
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.model || DEFAULTS.model)}:generateContent`;
+  const call = () => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.geminiKey }, body: JSON.stringify(body) });
+  let r = await call();
+  if (r.status === 400) { delete body.generationConfig.thinkingConfig; r = await call(); } // 旧模型不支持此设定时自动退回
   if (!r.ok) throw new Error('Gemini 错误 ' + r.status + '：' + (await r.text()).slice(0, 200));
   const data = await r.json();
   const text = (data.candidates?.[0]?.content?.parts || []).filter((p) => !p.thought).map((p) => p.text || '').join('');
@@ -270,9 +278,11 @@ async function onPick(file) {
     if (prep.url) { $('preview').src = prep.url; $('preview').classList.remove('hidden'); $('pdfName').classList.add('hidden'); }
     else { $('preview').classList.add('hidden'); $('pdfName').textContent = '📄 ' + file.name; $('pdfName').classList.remove('hidden'); }
     current = { prep, hash: await sha256(prep.blob), fileName: file.name };
-    let ai;
+    let ai; const t0 = Date.now();
+    const tick = setInterval(() => { $('aiBusy').innerHTML = `<span class="spinner"></span>&nbsp; AI 正在分析收据… ${Math.round((Date.now() - t0) / 1000)} 秒`; }, 1000);
     try { ai = await analyze(prep); }
     catch (e) { ai = { category_id: 'OTHER', confidence: 0, reason: 'AI 分析失败：' + e.message + '。请手动填写。', warnings: [] }; }
+    finally { clearInterval(tick); $('aiBusy').innerHTML = '<span class="spinner"></span>&nbsp; AI 正在分析收据…'; }
     current.ai = ai;
     fillSelects();
     $('fCat').value = ai.category_id || 'OTHER';

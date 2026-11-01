@@ -1,5 +1,5 @@
 // 离线外壳：程序文件先走网络（拿到最新版），断网时用缓存。Google / Gemini 请求一律不缓存。
-const CACHE = 'tax-receipt-v3';
+const CACHE = 'tax-receipt-v4';
 const SHELL = ['./', 'index.html', 'app.js', 'reliefs.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', (e) => {
