@@ -6,6 +6,7 @@
 
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 const LEDGER_NAME = '收据总账 Ledger';
+const FALLBACK_MODEL = 'gemini-flash-lite-latest';
 const HEADER = ['上传时间', '收据日期', '商家', '金额(RM)', '分类代码', '分类名称', '家人', '内容/备注',
   '文件', '文件ID', 'AI信心', '文件指纹', 'AI建议分类', '报税人'];
 const DEFAULTS = {
@@ -237,11 +238,24 @@ async function analyze(prep) {
     // 读收据不需要深度推理：关掉“思考”，速度快好几倍
     generationConfig: { responseMimeType: 'application/json', temperature: 0.1, thinkingConfig: { thinkingLevel: 'minimal' } },
   };
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.model || DEFAULTS.model)}:generateContent`;
-  const call = () => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.geminiKey }, body: JSON.stringify(body) });
-  let r = await call();
-  if (r.status === 400) { delete body.generationConfig.thinkingConfig; r = await call(); } // 旧模型不支持此设定时自动退回
-  if (!r.ok) throw new Error('Gemini 错误 ' + r.status + '：' + (await r.text()).slice(0, 200));
+  // Google 忙碌（503/429/500）时：自动等几秒重试，主模型一直忙就换备用的 Lite 模型
+  const main = cfg.model || DEFAULTS.model;
+  const models = [main, ...(main === FALLBACK_MODEL ? [] : [FALLBACK_MODEL])];
+  const wait = (ms) => new Promise((res) => setTimeout(res, ms));
+  let r, lastErr = '';
+  outer: for (const model of models) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (model !== main || attempt) setAiStatus(model !== main ? '主模型忙碌，改用备用模型…' : `Google 忙碌，第 ${attempt + 1} 次重试…`);
+      r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.geminiKey }, body: JSON.stringify(body) });
+      if (r.status === 400 && body.generationConfig.thinkingConfig) { delete body.generationConfig.thinkingConfig; attempt--; continue; } // 模型不支持此设定时退回
+      if (r.ok) break outer;
+      lastErr = r.status + '：' + (await r.text()).slice(0, 160);
+      if (![429, 500, 503].includes(r.status)) throw new Error('Gemini 错误 ' + lastErr);
+      await wait(2000 * (attempt + 1));
+    }
+  }
+  if (!r.ok) throw new Error('Google AI 目前太忙（' + lastErr.slice(0, 3) + '），请过一会儿按「重新分析」');
   const data = await r.json();
   const text = (data.candidates?.[0]?.content?.parts || []).filter((p) => !p.thought).map((p) => p.text || '').join('');
   const json = JSON.parse(text.replace(/^```(json)?|```$/g, '').trim());
@@ -283,6 +297,41 @@ function updateYA() {
   $('yaNote').classList.toggle('bad', !!warn);
 }
 
+let aiStatus = '';
+function setAiStatus(t) { aiStatus = t; }
+
+async function runAnalyze() {
+  const prep = current.prep;
+  $('form').classList.add('hidden'); $('aiBox').classList.add('hidden'); $('aiBusy').classList.remove('hidden');
+  let ai; const t0 = Date.now(); aiStatus = '';
+  const tick = setInterval(() => {
+    $('aiBusy').innerHTML = `<span class="spinner"></span>&nbsp; AI 正在分析收据… ${Math.round((Date.now() - t0) / 1000)} 秒` + (aiStatus ? `<br><span class="muted">${aiStatus}</span>` : '');
+  }, 500);
+  try { ai = await analyze(prep); ai.secs = Math.round((Date.now() - t0) / 1000); }
+  catch (e) { ai = { failed: true, category_id: 'OTHER', confidence: 0, reason: e.message + '。也可以直接手动填写。', warnings: [] }; }
+  finally { clearInterval(tick); $('aiBusy').classList.add('hidden'); $('aiBusy').innerHTML = '<span class="spinner"></span>&nbsp; AI 正在分析收据…'; }
+  current.ai = ai;
+  fillSelects();
+  $('fCat').value = ai.category_id || 'OTHER';
+  $('fMember').value = cfg.members.includes(ai.member_guess) ? ai.member_guess : cfg.members[0];
+  $('fPayer').value = lastPayer(); syncPayer();
+  setDate(/^\d{4}-\d{2}-\d{2}$/.test(ai.date || '') ? ai.date : new Date().toISOString().slice(0, 10));
+  $('fAmount').value = ai.total_amount ?? '';
+  $('fMerchant').value = ai.merchant || '';
+  $('fDesc').value = ai.items_summary || '';
+  const conf = Math.round((ai.confidence || 0) * 100);
+  const box = $('aiBox');
+  box.classList.toggle('low', ai.failed || conf < 70);
+  box.innerHTML = (ai.failed
+      ? `<b>AI 分析失败</b><br>${escapeHtml(ai.reason)}<br><button type="button" class="btn secondary" style="margin-top:10px" onclick="runAnalyze()">🔄 重新分析</button>`
+      : `<b>AI 建议：${escapeHtml(relief(ai.category_id).name)}</b> <span class="badge">把握 ${conf}%</span> <span class="badge">${ai.secs} 秒</span><br>${escapeHtml(ai.reason || '')}`
+        + (ai.warnings?.length ? `<br><span class="bad">⚠ ${ai.warnings.map(escapeHtml).join('；')}</span>` : '')
+        + (ai.is_receipt === false ? '<br><span class="bad">⚠ 这看起来不像收据，请确认。</span>' : ''));
+  box.classList.remove('hidden');
+  updateCatHelp(); updateYA();
+  $('form').classList.remove('hidden');
+}
+
 async function onPick(file) {
   if (!file) return;
   showOnly('reviewCard');
@@ -292,32 +341,9 @@ async function onPick(file) {
     if (prep.url) { $('preview').src = prep.url; $('preview').classList.remove('hidden'); $('pdfName').classList.add('hidden'); }
     else { $('preview').classList.add('hidden'); $('pdfName').textContent = '📄 ' + file.name; $('pdfName').classList.remove('hidden'); }
     current = { prep, hash: await sha256(prep.blob), fileName: file.name };
-    let ai; const t0 = Date.now();
-    const tick = setInterval(() => { $('aiBusy').innerHTML = `<span class="spinner"></span>&nbsp; AI 正在分析收据… ${Math.round((Date.now() - t0) / 1000)} 秒`; }, 1000);
-    try { ai = await analyze(prep); }
-    catch (e) { ai = { category_id: 'OTHER', confidence: 0, reason: 'AI 分析失败：' + e.message + '。请手动填写。', warnings: [] }; }
-    finally { clearInterval(tick); $('aiBusy').innerHTML = '<span class="spinner"></span>&nbsp; AI 正在分析收据…'; }
-    current.ai = ai;
-    fillSelects();
-    $('fCat').value = ai.category_id || 'OTHER';
-    $('fMember').value = cfg.members.includes(ai.member_guess) ? ai.member_guess : cfg.members[0];
-    $('fPayer').value = lastPayer(); syncPayer();
-    setDate(/^\d{4}-\d{2}-\d{2}$/.test(ai.date || '') ? ai.date : new Date().toISOString().slice(0, 10));
-    $('fAmount').value = ai.total_amount ?? '';
-    $('fMerchant').value = ai.merchant || '';
-    $('fDesc').value = ai.items_summary || '';
-    const conf = Math.round((ai.confidence || 0) * 100);
-    const box = $('aiBox');
-    box.classList.toggle('low', conf < 70);
-    box.innerHTML = `<b>AI 建议：${escapeHtml(relief(ai.category_id).name)}</b> <span class="badge">把握 ${conf}%</span><br>${escapeHtml(ai.reason || '')}`
-      + (ai.warnings?.length ? `<br><span class="bad">⚠ ${ai.warnings.map(escapeHtml).join('；')}</span>` : '')
-      + (ai.is_receipt === false ? '<br><span class="bad">⚠ 这看起来不像收据，请确认。</span>' : '');
-    box.classList.remove('hidden');
-    updateCatHelp(); updateYA();
-    $('form').classList.remove('hidden');
+    await runAnalyze();
   } catch (e) {
     toast(e.message, 5000); showOnly('pickCard');
-  } finally {
     $('aiBusy').classList.add('hidden');
   }
 }
