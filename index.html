@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>税务收据小助手</title>
+<meta name="theme-color" content="#1e3a8a">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="税务收据">
+<style>
+  :root{
+    --blue:#1e3a8a; --blue2:#2563eb; --bg:#f4f6fb; --card:#fff; --text:#0f172a; --muted:#64748b;
+    --line:#e2e8f0; --ok:#16a34a; --warn:#d97706; --bad:#dc2626; --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Roboto,sans-serif;font-size:16px}
+  header{background:linear-gradient(90deg,var(--blue),var(--blue2));color:#fff;
+    padding:calc(12px + env(safe-area-inset-top)) 16px 12px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:5}
+  header .logo{width:36px;height:36px;border-radius:9px;background:#fff;display:grid;place-items:center;flex:none}
+  header h1{font-size:17px;margin:0;line-height:1.2}
+  header small{display:block;font-size:12px;opacity:.85;font-weight:400}
+  .chip{margin-left:auto;font-size:12px;padding:4px 10px;border-radius:99px;background:rgba(255,255,255,.18);white-space:nowrap}
+  .chip.on::before{content:"● ";color:#4ade80}
+  main{max-width:640px;margin:0 auto;padding:16px 16px calc(96px + env(safe-area-inset-bottom))}
+  .view{display:none}.view.active{display:block}
+  .card{background:var(--card);border-radius:var(--radius);padding:16px;margin-bottom:14px;box-shadow:0 1px 2px rgba(15,23,42,.06)}
+  h2{font-size:18px;margin:4px 0 12px}
+  h3{font-size:15px;margin:0 0 8px}
+  .muted{color:var(--muted);font-size:13px}
+  .drop{border:2px dashed #cbd5e1;border-radius:var(--radius);padding:28px 16px;text-align:center;background:#fff}
+  .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;border:0;border-radius:12px;
+    padding:14px;font-size:16px;font-weight:600;cursor:pointer;background:var(--blue2);color:#fff;text-decoration:none}
+  .btn.secondary{background:#e8eefc;color:var(--blue)}
+  .btn.ghost{background:transparent;color:var(--blue2);border:1px solid var(--line)}
+  .btn:disabled{opacity:.5}
+  .row{display:flex;gap:10px}.row>*{flex:1}
+  label{display:block;font-size:13px;color:var(--muted);margin:12px 0 4px}
+  input,select,textarea{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;font-size:16px;background:#fff;color:var(--text);font-family:inherit}
+  textarea{min-height:90px}
+  #preview{max-width:100%;max-height:340px;border-radius:10px;display:block;margin:0 auto}
+  .ai{background:#eff6ff;border-left:4px solid var(--blue2);padding:10px 12px;border-radius:8px;font-size:14px;margin-top:12px}
+  .ai.low{background:#fff7ed;border-color:var(--warn)}
+  .badge{display:inline-block;font-size:12px;padding:2px 8px;border-radius:99px;background:#e2e8f0;color:#334155}
+  .spinner{width:22px;height:22px;border:3px solid #cbd5e1;border-top-color:var(--blue2);border-radius:50%;animation:spin 1s linear infinite;display:inline-block;vertical-align:middle}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .cat{padding:12px 0;border-bottom:1px solid var(--line)}
+  .cat:last-child{border-bottom:0}
+  .cat .top{display:flex;justify-content:space-between;gap:8px;font-size:14px}
+  .bar{height:8px;background:#e2e8f0;border-radius:99px;margin-top:6px;overflow:hidden}
+  .bar>i{display:block;height:100%;background:var(--blue2);border-radius:99px}
+  .bar>i.full{background:var(--ok)}
+  .bar>i.over{background:var(--warn)}
+  .big{font-size:28px;font-weight:700}
+  .list a{color:var(--blue2);text-decoration:none}
+  .rec{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px}
+  .rec:last-child{border-bottom:0}
+  nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);display:flex;
+    padding-bottom:env(safe-area-inset-bottom);z-index:5}
+  nav button{flex:1;border:0;background:none;padding:10px 0 8px;font-size:12px;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer}
+  nav button svg{width:24px;height:24px}
+  nav button.active{color:var(--blue2);font-weight:600}
+  .toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;z-index:9;max-width:90%;display:none}
+  .ok{color:var(--ok)} .bad{color:var(--bad)}
+  .hidden{display:none!important}
+  .steps{font-size:14px;line-height:1.7;padding-left:20px;margin:6px 0}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1e3a8a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h4"/></svg>
+  </div>
+  <div><h1>税务收据小助手<small>LHDN 减免收据 · 自动归类存档</small></h1></div>
+  <span id="gchip" class="chip">未连接 Google</span>
+</header>
+
+<main>
+  <!-- ========== 上传 ========== -->
+  <section id="v-upload" class="view active">
+    <div id="setupHint" class="card hidden">
+      <h3>先完成设置</h3>
+      <p class="muted">需要填入 Google Client ID 和 Gemini API Key，并连接 Google Drive。</p>
+      <button class="btn secondary" data-goto="settings">去设置</button>
+    </div>
+
+    <div id="pickCard" class="card">
+      <h2>上传收据</h2>
+      <div class="drop">
+        <p style="margin:0 0 14px;font-weight:600">拍照或选择收据</p>
+        <div class="row">
+          <button class="btn" id="btnCamera">📷 拍照</button>
+          <button class="btn secondary" id="btnFile">🖼️ 相册 / PDF</button>
+        </div>
+        <p class="muted" style="margin:12px 0 0">AI 会读取日期、商家、金额，并按 LHDN 减免项目归类</p>
+      </div>
+      <input type="file" id="inCamera" accept="image/*" capture="environment" class="hidden">
+      <input type="file" id="inFile" accept="image/*,application/pdf" class="hidden">
+    </div>
+
+    <div id="reviewCard" class="card hidden">
+      <img id="preview" alt="收据预览">
+      <p id="pdfName" class="muted hidden" style="text-align:center"></p>
+      <div id="aiBusy" class="ai"><span class="spinner"></span>&nbsp; AI 正在分析收据…</div>
+      <div id="aiBox" class="ai hidden"></div>
+
+      <form id="form" class="hidden" onsubmit="return false">
+        <label>分类（减免项目）</label>
+        <select id="fCat"></select>
+        <p id="catHelp" class="muted" style="margin:6px 0 0"></p>
+        <label>归属家人</label>
+        <select id="fMember"></select>
+        <div class="row">
+          <div><label>收据日期</label><input type="date" id="fDate" required></div>
+          <div><label>金额 (RM)</label><input type="number" id="fAmount" step="0.01" min="0" inputmode="decimal" required></div>
+        </div>
+        <label>商家 / 机构</label>
+        <input id="fMerchant" maxlength="80">
+        <label>内容 / 备注</label>
+        <input id="fDesc" maxlength="200">
+        <p id="yaNote" class="muted"></p>
+        <div class="row" style="margin-top:14px">
+          <button class="btn ghost" id="btnCancel" type="button">取消</button>
+          <button class="btn" id="btnSave" type="button">保存到 Drive</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="doneCard" class="card hidden">
+      <h2 class="ok">✓ 已存档</h2>
+      <p id="doneText" class="muted"></p>
+      <div class="row" style="margin-top:12px">
+        <a class="btn ghost" id="doneLink" target="_blank" rel="noopener">查看文件</a>
+        <button class="btn" id="btnNext">再传一张</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== 总览 ========== -->
+  <section id="v-summary" class="view">
+    <div class="card">
+      <div class="row" style="align-items:center">
+        <h2 style="margin:0">减免总览</h2>
+        <select id="sYA" style="max-width:130px"></select>
+      </div>
+      <p class="muted" id="sYANote"></p>
+      <div class="muted">可申报减免合计（已按上限计算）</div>
+      <div class="big" id="sTotal">RM 0.00</div>
+      <div class="muted" id="sCount"></div>
+      <div class="row" style="margin-top:12px">
+        <a class="btn ghost" id="sFolder" target="_blank" rel="noopener">📁 Drive 文件夹</a>
+        <a class="btn ghost" id="sSheet" target="_blank" rel="noopener">📊 总账</a>
+      </div>
+    </div>
+    <div class="card"><h3>各项目累计 vs 上限</h3><div id="sCats"><p class="muted">载入中…</p></div></div>
+    <div class="card"><h3>按家人</h3><div id="sMembers"></div></div>
+    <div class="card list"><h3>最近收据</h3><div id="sRecent"></div></div>
+  </section>
+
+  <!-- ========== 设置 ========== -->
+  <section id="v-settings" class="view">
+    <div class="card">
+      <h2>Google 连接</h2>
+      <p class="muted">收据只存进你自己的 Google Drive（本应用只能看到它自己建立的文件）。</p>
+      <label>Google OAuth Client ID</label>
+      <input id="cfgClient" placeholder="xxxx.apps.googleusercontent.com" autocomplete="off">
+      <div class="row" style="margin-top:12px">
+        <button class="btn" id="btnConnect">连接 Google Drive</button>
+        <button class="btn ghost" id="btnDisconnect">断开</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>AI（Gemini）</h2>
+      <label>Gemini API Key</label>
+      <input id="cfgKey" type="password" placeholder="AIza…" autocomplete="off">
+      <label>模型</label>
+      <input id="cfgModel" placeholder="gemini-flash-latest">
+      <p class="muted">Key 只保存在这台手机的浏览器里，直接发给 Google，不经过其他服务器。</p>
+    </div>
+    <div class="card">
+      <h2>家人名单</h2>
+      <p class="muted">一行一个。第一行是报税人本人。孩子建议写名字，方便分开。</p>
+      <textarea id="cfgMembers"></textarea>
+      <label>Drive 主文件夹名称</label>
+      <input id="cfgRoot">
+    </div>
+    <button class="btn" id="btnSaveCfg">保存设置</button>
+    <div class="card" style="margin-top:14px">
+      <h3>保存期限提醒</h3>
+      <p class="muted" style="margin:0">根据《1967年所得税法》第 82A 条，报税佐证需保留 7 年。本应用不会自动删除任何文件。
+      安全做法：YA2026 的收据至少保留到 2034 年之后。</p>
+      <p class="muted" id="reliefNote"></p>
+    </div>
+  </section>
+</main>
+
+<nav>
+  <button data-goto="upload" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>上传</button>
+  <button data-goto="summary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>总览</button>
+  <button data-goto="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>设置</button>
+</nav>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="reliefs.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
