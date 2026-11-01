@@ -63,10 +63,27 @@ const RELIEFS = [
     covers: '捐给政府或 LHDN 认可慈善团体/机构的捐款收据（收据上应有 LHDN 批准编号），最多可扣总收入的 10%' },
   { id: 'ZAKAT', folder: '20 天课 Zakat', name: 'Zakat / Fitrah（回扣）', cap: null,
     covers: '缴付给州宗教局的 Zakat 或 Fitrah 收据（直接扣税款）' },
+  // ===== 业务开销（Enterprise / 个人独资，报在 B 表格；从生意收入扣除，没有固定上限）=====
+  // biz: true = 只给「设置 → 有生意的报税人」用。只有业务用途的部分可以扣，私人用途要自己扣掉。
+  { id: 'BIZ_FUEL', biz: true, folder: 'B1 业务-汽油 Petrol', name: '业务：汽油', cap: null,
+    covers: '油站汽油、柴油收据（Petron、Shell、Petronas、Caltex、BHP 等）' },
+  { id: 'BIZ_TOLL', biz: true, folder: 'B2 业务-过路费停车 Tol Parking', name: '业务：过路费 / 停车', cap: null,
+    covers: 'Touch n Go / 大道过路费、停车场收据、停车 App 收据' },
+  { id: 'BIZ_PHONE', biz: true, folder: 'B3 业务-电话网络 Telefon', name: '业务：电话 / 网络', cap: null,
+    covers: '账单抬头是生意名称，或明确用于生意的电话、上网月费（个人用的上网费归 LIFESTYLE）' },
+  { id: 'BIZ_OFFICE', biz: true, folder: 'B4 业务-文具办公 Pejabat', name: '业务：文具 / 办公用品', cap: null,
+    covers: '文具、打印、复印、办公耗材、小型办公设备、软件订阅' },
+  { id: 'BIZ_TRAVEL', biz: true, folder: 'B5 业务-差旅交通 Perjalanan', name: '业务：差旅 / 交通', cap: null,
+    covers: 'Grab、出租车、机票、巴士、火车、出差住宿' },
+  { id: 'BIZ_STOCK', biz: true, folder: 'B6 业务-进货材料 Stok', name: '业务：进货 / 材料', cap: null,
+    covers: '为生意购买的货品、原料、包装材料（发票通常有供应商名称）' },
+  { id: 'BIZ_OTHER', biz: true, folder: 'B9 业务-其他 Lain-lain Perniagaan', name: '业务：其他开销', cap: null,
+    covers: '其他为生意花的钱：维修、广告、快递运费、专业服务费、租金、水电（生意场所）等' },
+
   { id: 'INCOME_DOCS', folder: '00 收入与证明文件 Dokumen', name: '收入 / 身份证明文件', cap: null,
     covers: 'EA 表格、EPF 结单、PERKESO/SOCSO 结单、股息凭单、出生证、结婚证、OKU 卡等报税佐证文件（非收据）' },
   { id: 'OTHER', folder: '99 其他（非减免）Lain-lain', name: '其他（非减免，仅备查）', cap: null,
-    covers: '不属于以上任何减免项目的日常花费收据（餐饮、杂货、衣服、汽油、维修等）' },
+    covers: '不属于以上任何减免项目或业务开销的日常花费收据（餐饮、杂货、衣服、私人维修等）' },
 ];
 
 if (typeof module !== 'undefined') module.exports = { RELIEFS, RELIEF_GROUPS, RELIEF_YEAR_NOTE };

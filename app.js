@@ -3,7 +3,7 @@
  * 没有后端服务器：API Key 和登录凭证只在本机浏览器。
  */
 'use strict';
-const APP_VERSION = 'v8';
+const APP_VERSION = 'v9';
 
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 const LEDGER_NAME = '收据总账 Ledger';
@@ -12,7 +12,7 @@ const HEADER = ['上传时间', '收据日期', '商家', '金额(RM)', '分类�
   '文件', '文件ID', 'AI信心', '文件指纹', 'AI建议分类', '报税人'];
 const DEFAULTS = {
   clientId: '', geminiKey: '', model: 'gemini-flash-latest',
-  payers: ['我', '老婆'], members: ['我', '老婆', '孩子1', '父亲', '母亲'], rootName: 'LHDN 税务收据',
+  payers: ['我', '老婆'], bizPayers: ['老婆'], members: ['我', '老婆', '孩子1', '父亲', '母亲'], rootName: 'LHDN 税务收据',
 };
 
 const $ = (id) => document.getElementById(id);
@@ -30,6 +30,7 @@ function parseDmy(t) {
 // Sheets 读回来的日期可能是数字编号（1899-12-30 起算的天数）
 const cellDate = (v) => (typeof v === 'number' ? new Date(Date.UTC(1899, 11, 30) + v * 86400000).toISOString().slice(0, 10) : String(v || ''));
 function setDate(iso) { $('fDate').value = iso; $('fDateTxt').value = dmy(iso); updateYA(); }
+const isBiz = (id) => !!(RELIEFS.find((r) => r.id === id) || {}).biz;
 const relief = (id) => RELIEFS.find((r) => r.id === id) || RELIEFS[RELIEFS.length - 1];
 
 /* ---------------- 设置（本机存储） ---------------- */
@@ -210,7 +211,8 @@ async function sha256(blob) {
 
 /* ---------------- Gemini 分析 ---------------- */
 function buildPrompt() {
-  const cats = RELIEFS.map((r) => `- ${r.id}：${r.name}${r.cap ? `（上限 RM${r.cap}）` : ''}。适用：${r.covers}`).join('\n');
+  const hasBiz = cfg.bizPayers.length > 0;
+  const cats = RELIEFS.filter((r) => hasBiz || !r.biz).map((r) => `- ${r.id}：${r.name}${r.cap ? `（上限 RM${r.cap}）` : ''}。适用：${r.covers}`).join('\n');
   return `你是马来西亚个人所得税（LHDN）助理。请读取这张收据/单据，并判断它属于哪一个个人所得税减免项目。
 
 减免分类（只能从以下 id 选一个）：
@@ -225,7 +227,8 @@ ${cats}
 4. 药房买的普通药品、保健品一般不能扣税，选 OTHER（除非是医疗监测器材或疫苗）。
 5. 如能从单据看出是谁（病人名字、孩子名字、保单受保人），填 member_guess；否则填 "${cfg.members[0]}"。
 6. 金额用最终实付总额（含 SST），只填数字。马来西亚收据日期通常是 日/月/年（DD/MM/YY 或 DD/MM/YYYY），两位数年份 YY 一律解读为 20YY（例如 31/08/26 = 2026-08-31）。今天是 ${new Date().toISOString().slice(0, 10)}，收据日期不可能晚于今天。输出格式 YYYY-MM-DD；看不清就填 null。
-7. reason 用简体中文一两句话说明归类理由；若有申报风险（例如商家看起来不是注册诊所、项目可能不符合条件），写进 warnings。
+${hasBiz ? `7. 家里有人做生意（${cfg.bizPayers.join('、')}，个人独资 Enterprise）。汽油、过路费、停车、Grab/差旅这类单据选对应的 BIZ_ 业务分类；抬头是生意名称的单据也选 BIZ_。可以报个人减免的项目（书本、电脑、医疗等）仍然优先选个人减免分类。
+` : ''}8. reason 用简体中文一两句话说明归类理由；若有申报风险（例如商家看起来不是注册诊所、项目可能不符合条件），写进 warnings。
 
 只输出 JSON：
 {"is_receipt": true, "date": "YYYY-MM-DD", "merchant": "", "total_amount": 0, "currency": "MYR",
@@ -276,7 +279,11 @@ async function analyze(prep) {
 let current = null; // { prep, hash, ai }
 
 function fillSelects() {
-  $('fCat').innerHTML = RELIEFS.map((r) => `<option value="${r.id}">${r.name}${r.cap ? ' · 上限 RM' + r.cap.toLocaleString() : ''}</option>`).join('');
+  const opt = (r) => `<option value="${r.id}">${r.name}${r.cap ? ' · 上限 RM' + r.cap.toLocaleString() : ''}</option>`;
+  const personal = RELIEFS.filter((r) => !r.biz && r.cap), biz = RELIEFS.filter((r) => r.biz), other = RELIEFS.filter((r) => !r.biz && !r.cap);
+  $('fCat').innerHTML = `<optgroup label="个人减免">${personal.map(opt).join('')}</optgroup>`
+    + (cfg.bizPayers.length ? `<optgroup label="业务开销（B 表格）">${biz.map(opt).join('')}</optgroup>` : '')
+    + `<optgroup label="其他">${other.map(opt).join('')}</optgroup>`;
   $('fMember').innerHTML = cfg.members.map((m) => `<option>${escapeHtml(m)}</option>`).join('');
   const opts = cfg.payers.map((m) => `<option>${escapeHtml(m)}</option>`).join('');
   const keep = $('sPayer').value;
@@ -292,9 +299,11 @@ function showOnly(id) {
   ['pickCard', 'reviewCard', 'doneCard'].forEach((x) => $(x).classList.toggle('hidden', x !== id));
 }
 
-function updateCatHelp() {
+function updateCatHelp(autoSwitch = true) {
   const r = relief($('fCat').value);
-  $('catHelp').textContent = r.covers;
+  if (autoSwitch && r.biz && cfg.bizPayers.length && !cfg.bizPayers.includes($('fPayer').value)) $('fPayer').value = cfg.bizPayers[0];
+  const warn = r.biz && !cfg.bizPayers.includes($('fPayer').value) ? '　⚠ 这位报税人没有登记生意，业务开销不能扣' : '';
+  $('catHelp').textContent = r.covers + (r.biz ? '（只有业务用途的部分可以扣）' : '') + warn;
 }
 function updateYA() {
   const d = $('fDate').value || '', y = d.slice(0, 4), now = new Date();
@@ -459,9 +468,13 @@ async function loadSummary() {
       html += `<div class="cat"><div class="top"><b>${info.name}</b><span>${fmt(groupClaim[g])} / ${fmt(info.cap)}</span></div>${bar(spent, info.cap)}`
         + (info.note ? `<div class="muted">${info.note}</div>` : '') + '</div>';
     });
+    const bizRows = RELIEFS.filter((r) => r.biz && byCat[r.id]);
+    $('sBizCard').classList.toggle('hidden', !bizRows.length);
+    $('sBiz').innerHTML = bizRows.map((r) => `<div class="rec"><span>${r.name.replace('业务：', '')}</span><span>${fmt(byCat[r.id])}</span></div>`).join('')
+      + (bizRows.length ? `<div class="rec"><b>合计</b><b>${fmt(bizRows.reduce((a, r) => a + byCat[r.id], 0))}</b></div>` : '');
     RELIEFS.forEach((r) => {
       const spent = byCat[r.id] || 0;
-      if (!spent) return;
+      if (!spent || r.biz) return;
       if (!r.cap) {
         html += `<div class="cat"><div class="top"><span>${r.name}</span><span>${fmt(spent)}</span></div></div>`;
         return;
@@ -496,6 +509,7 @@ function go(view) {
 function renderSettings() {
   $('cfgClient').value = cfg.clientId; $('cfgKey').value = cfg.geminiKey; $('cfgModel').value = cfg.model;
   $('cfgPayers').value = cfg.payers.join('\n');
+  $('cfgBiz').value = (cfg.bizPayers || []).join('，');
   $('cfgMembers').value = cfg.members.join('\n'); $('cfgRoot').value = cfg.rootName;
   $('reliefNote').textContent = RELIEF_YEAR_NOTE + ' · App 版本 ' + APP_VERSION;
   $('setupHint').classList.toggle('hidden', !!(cfg.clientId && cfg.geminiKey));
@@ -509,6 +523,7 @@ function readSettingsForm() {
     clientId: $('cfgClient').value.trim(), geminiKey: $('cfgKey').value.trim(),
     model: $('cfgModel').value.trim() || DEFAULTS.model,
     payers: payers.length ? payers : DEFAULTS.payers,
+    bizPayers: $('cfgBiz').value.split(/[,，、\n]/).map((x) => x.trim()).filter(Boolean),
     members: members.length ? members : DEFAULTS.members, rootName: $('cfgRoot').value.trim() || DEFAULTS.rootName,
   };
   saveCfg(cfg);
@@ -522,7 +537,8 @@ function bind() {
   $('btnFile').onclick = () => $('inFile').click();
   $('inCamera').onchange = (e) => { onPick(e.target.files[0]); e.target.value = ''; };
   $('inFile').onchange = (e) => { onPick(e.target.files[0]); e.target.value = ''; };
-  $('fCat').onchange = updateCatHelp;
+  $('fCat').onchange = () => updateCatHelp(true);
+  $('fPayer').addEventListener('change', () => updateCatHelp(false));
   $('fDate').onchange = () => setDate($('fDate').value);
   $('fDateTxt').addEventListener('input', () => { $('fDate').value = parseDmy($('fDateTxt').value); updateYA(); });
   $('fDateTxt').addEventListener('blur', () => { if ($('fDate').value) $('fDateTxt').value = dmy($('fDate').value); });

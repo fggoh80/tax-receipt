@@ -165,6 +165,9 @@
       </div>
     </div>
     <div class="card"><h3>各项目累计 vs 上限</h3><div id="sCats"><p class="muted">载入中…</p></div></div>
+    <div class="card hidden" id="sBizCard"><h3>业务开销（B 表格，不计减免上限）</h3>
+      <p class="muted" style="margin:0 0 6px">从生意收入扣除。只有业务用途的部分可以扣，请和会计确认。</p>
+      <div id="sBiz"></div></div>
     <div class="card"><h3>按家人</h3><div id="sMembers"></div></div>
     <div class="card list"><h3>最近收据</h3><div id="sRecent"></div></div>
   </section>
@@ -193,6 +196,8 @@
       <h2>报税人</h2>
       <p class="muted">一行一个，各自分开计算减免上限。例如：我、老婆。</p>
       <textarea id="cfgPayers" style="min-height:70px"></textarea>
+      <label>有生意（Enterprise，报 B 表格）的报税人</label>
+      <input id="cfgBiz" placeholder="例如：老婆（多位用逗号分开，没有就留空）">
       <h2 style="margin-top:18px">家人名单</h2>
       <p class="muted">一行一个（收据是谁的花费）。孩子建议写名字，方便分开。</p>
       <textarea id="cfgMembers"></textarea>
@@ -218,7 +223,7 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<script src="reliefs.js?v8"></script>
-<script src="app.js?v8"></script>
+<script src="reliefs.js?v9"></script>
+<script src="app.js?v9"></script>
 </body>
 </html>
