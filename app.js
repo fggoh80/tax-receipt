@@ -247,15 +247,23 @@ async function analyze(prep) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
     for (let attempt = 0; attempt < 3; attempt++) {
       if (model !== main || attempt) setAiStatus(model !== main ? '主模型忙碌，改用备用模型…' : `Google 忙碌，第 ${attempt + 1} 次重试…`);
-      r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.geminiKey }, body: JSON.stringify(body) });
+      // 每次最多等 25 秒；没回应就当作忙碌，重试或换备用模型
+      const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 25000);
+      try {
+        r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.geminiKey }, body: JSON.stringify(body), signal: ctl.signal });
+      } catch (e) {
+        r = { ok: false, status: e.name === 'AbortError' ? 504 : 0, text: async () => (e.name === 'AbortError' ? '等了 25 秒没有回应' : '网络错误：' + e.message) };
+      } finally { clearTimeout(timer); }
       if (r.status === 400 && body.generationConfig.thinkingConfig) { delete body.generationConfig.thinkingConfig; attempt--; continue; } // 模型不支持此设定时退回
       if (r.ok) break outer;
       lastErr = r.status + '：' + (await r.text()).slice(0, 160);
-      if (![429, 500, 503].includes(r.status)) throw new Error('Gemini 错误 ' + lastErr);
+      if (![0, 429, 500, 503, 504].includes(r.status)) throw new Error('Gemini 错误 ' + lastErr);
+      if (r.status === 504 || r.status === 0) { setAiStatus(r.status === 504 ? 'Google 没回应，改试下一次…' : '网络不稳，重试中…'); }
+      if (r.status === 504) break; // 没回应就直接换备用模型，不再干等
       await wait(2000 * (attempt + 1));
     }
   }
-  if (!r.ok) throw new Error('Google AI 目前太忙（' + lastErr.slice(0, 3) + '），请过一会儿按「重新分析」');
+  if (!r.ok) throw new Error('Google AI 目前太忙或没回应（' + lastErr.split('：')[0] + '），请过一会儿按「重新分析」');
   const data = await r.json();
   const text = (data.candidates?.[0]?.content?.parts || []).filter((p) => !p.thought).map((p) => p.text || '').join('');
   const json = JSON.parse(text.replace(/^```(json)?|```$/g, '').trim());
