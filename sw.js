@@ -1,5 +1,5 @@
 // 离线外壳：程序文件先走网络（拿到最新版），断网时用缓存。Google / Gemini 请求一律不缓存。
-const CACHE = 'tax-receipt-v7';
+const CACHE = 'tax-receipt-v8';
 const SHELL = ['./', 'index.html', 'app.js', 'reliefs.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', (e) => {
@@ -13,10 +13,10 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   e.respondWith(
-    fetch(e.request).then((r) => {
+    fetch(e.request, { cache: 'no-cache' }).then((r) => {  // 每次都向服务器确认有没有新版
       const copy = r.clone();
       caches.open(CACHE).then((c) => c.put(e.request, copy));
       return r;
-    }).catch(() => caches.match(e.request))
+    }).catch(() => caches.match(e.request, { ignoreSearch: true }))
   );
 });

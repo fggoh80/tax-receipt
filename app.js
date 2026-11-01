@@ -3,6 +3,7 @@
  * 没有后端服务器：API Key 和登录凭证只在本机浏览器。
  */
 'use strict';
+const APP_VERSION = 'v8';
 
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 const LEDGER_NAME = '收据总账 Ledger';
@@ -496,7 +497,7 @@ function renderSettings() {
   $('cfgClient').value = cfg.clientId; $('cfgKey').value = cfg.geminiKey; $('cfgModel').value = cfg.model;
   $('cfgPayers').value = cfg.payers.join('\n');
   $('cfgMembers').value = cfg.members.join('\n'); $('cfgRoot').value = cfg.rootName;
-  $('reliefNote').textContent = RELIEF_YEAR_NOTE;
+  $('reliefNote').textContent = RELIEF_YEAR_NOTE + ' · App 版本 ' + APP_VERSION;
   $('setupHint').classList.toggle('hidden', !!(cfg.clientId && cfg.geminiKey));
 }
 
