@@ -15,14 +15,14 @@
  *   covers  给 AI 看的说明：什么收据属于这一类
  */
 
-const RELIEF_YEAR_NOTE = 'YA2026 分类表 · 最后核对：2026年11月 · 请每年对照 LHDN 官网更新';
+const NOTE_2026 = 'YA2026 分类表 · 最后核对：2026年11月';
 
-const RELIEF_GROUPS = {
+const GROUPS_2026 = {
   MED: { name: '医疗总额（本人/配偶/孩子）', cap: 10000 },
   EPF_LIFE: { name: 'EPF + 人寿保险合计', cap: 7000, note: 'EPF 部分看 EA 表，不需要收据' },
 };
 
-const RELIEFS = [
+const ITEMS_2026 = [
   { id: 'LIFESTYLE', folder: '01 生活方式 Gaya Hidup', name: '生活方式', cap: 2500,
     covers: '本人/配偶/孩子用的书籍、报章杂志（非禁书）；电脑、手提电脑、手机、平板（新购）；家用/手机上网月费账单；非学位的技能提升课程费' },
   { id: 'SPORTS', folder: '02 运动 Sukan', name: '运动', cap: 1000,
@@ -86,4 +86,35 @@ const RELIEFS = [
     covers: '不属于以上任何减免项目或业务开销的日常花费收据（餐饮、杂货、衣服、私人维修等）' },
 ];
 
-if (typeof module !== 'undefined') module.exports = { RELIEFS, RELIEF_GROUPS, RELIEF_YEAR_NOTE };
+/* =====================================================================
+ * 每一年一份条款，分开保存。旧年份永远不改。
+ * 新的一年：在下面加一行，例如
+ *   2027: { note: NOTE_2027, groups: GROUPS_2027, items: ITEMS_2027 },
+ * 并在上面另外写一段 NOTE_2027 / GROUPS_2027 / ITEMS_2027（可以复制 2026 再修改）。
+ * 分类代码 id 尽量沿用，总账才能跨年对照。
+ * ===================================================================== */
+const RELIEF_YEARS = {
+  2026: { note: NOTE_2026, groups: GROUPS_2026, items: ITEMS_2026 },
+};
+
+// 找某个 YA 适用的条款：用该年份；没有就用它之前最近的一年（最早一年以前的也用最早的）
+function reliefYearOf(ya) {
+  const ys = Object.keys(RELIEF_YEARS).map(Number).sort((a, b) => a - b);
+  let pick = ys[0];
+  for (const y of ys) if (y <= +ya) pick = y;
+  return { year: pick, ...RELIEF_YEARS[pick] };
+}
+
+// 目前使用中的条款（app.js 会按收据年份切换）
+let RELIEF_ACTIVE_YEAR = Math.max(...Object.keys(RELIEF_YEARS).map(Number));
+let RELIEFS = RELIEF_YEARS[RELIEF_ACTIVE_YEAR].items;
+let RELIEF_GROUPS = RELIEF_YEARS[RELIEF_ACTIVE_YEAR].groups;
+let RELIEF_YEAR_NOTE = RELIEF_YEARS[RELIEF_ACTIVE_YEAR].note;
+function useReliefYear(ya) {
+  const t = reliefYearOf(ya);
+  const changed = t.year !== RELIEF_ACTIVE_YEAR;
+  RELIEF_ACTIVE_YEAR = t.year; RELIEFS = t.items; RELIEF_GROUPS = t.groups; RELIEF_YEAR_NOTE = t.note;
+  return changed;
+}
+
+if (typeof module !== 'undefined') module.exports = { RELIEF_YEARS, reliefYearOf };

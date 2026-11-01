@@ -3,7 +3,7 @@
  * 没有后端服务器：API Key 和登录凭证只在本机浏览器。
  */
 'use strict';
-const APP_VERSION = 'v9';
+const APP_VERSION = 'v10';
 
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 const LEDGER_NAME = '收据总账 Ledger';
@@ -278,12 +278,17 @@ async function analyze(prep) {
 /* ---------------- 上传流程 ---------------- */
 let current = null; // { prep, hash, ai }
 
-function fillSelects() {
+function fillCats() {
+  const keep = $('fCat').value;
   const opt = (r) => `<option value="${r.id}">${r.name}${r.cap ? ' · 上限 RM' + r.cap.toLocaleString() : ''}</option>`;
   const personal = RELIEFS.filter((r) => !r.biz && r.cap), biz = RELIEFS.filter((r) => r.biz), other = RELIEFS.filter((r) => !r.biz && !r.cap);
   $('fCat').innerHTML = `<optgroup label="个人减免">${personal.map(opt).join('')}</optgroup>`
     + (cfg.bizPayers.length ? `<optgroup label="业务开销（B 表格）">${biz.map(opt).join('')}</optgroup>` : '')
     + `<optgroup label="其他">${other.map(opt).join('')}</optgroup>`;
+  if (RELIEFS.some((r) => r.id === keep)) $('fCat').value = keep;
+}
+function fillSelects() {
+  fillCats();
   $('fMember').innerHTML = cfg.members.map((m) => `<option>${escapeHtml(m)}</option>`).join('');
   const opts = cfg.payers.map((m) => `<option>${escapeHtml(m)}</option>`).join('');
   const keep = $('sPayer').value;
@@ -307,11 +312,13 @@ function updateCatHelp(autoSwitch = true) {
 }
 function updateYA() {
   const d = $('fDate').value || '', y = d.slice(0, 4), now = new Date();
+  if (y && useReliefYear(y)) { fillCats(); updateCatHelp(false); }
   let warn = '';
   if (y && d > now.toISOString().slice(0, 10)) warn = ' ⚠ 日期在未来，请检查';
   else if (y && +y < now.getFullYear() - 1) warn = ' ⚠ 这是 ' + (now.getFullYear() - y) + ' 年前的收据，请确认日期没读错';
   if (!y && $('fDateTxt').value.trim()) warn = '⚠ 日期格式不对，请用 日/月/年，例如 31/8/2026';
-  $('yaNote').textContent = y ? `将存入 YA${y}（${y} 年的花费，${+y + 1} 年报税）${warn}` : warn;
+  const rule = y && RELIEF_ACTIVE_YEAR !== +y ? `，暂用 YA${RELIEF_ACTIVE_YEAR} 条款` : '';
+  $('yaNote').textContent = y ? `将存入 YA${y}（${y} 年的花费，${+y + 1} 年报税${rule}）${warn}` : warn;
   $('yaNote').classList.toggle('bad', !!warn);
 }
 
@@ -320,6 +327,7 @@ function setAiStatus(t) { aiStatus = t; }
 
 async function runAnalyze() {
   const prep = current.prep;
+  useReliefYear(new Date().getFullYear()); // 还不知道收据日期，先用最新条款
   $('form').classList.add('hidden'); $('aiBox').classList.add('hidden'); $('aiBusy').classList.remove('hidden');
   let ai; const t0 = Date.now(); aiStatus = '';
   const tick = setInterval(() => {
@@ -423,7 +431,9 @@ function fillYAs() {
 
 async function loadSummary() {
   const ya = $('sYA').value;
-  $('sYANote').textContent = `${ya} 年 1–12 月的花费 · ${+ya + 1} 年 4–5 月报税 · 建议保留至 ${+ya + 8} 年`;
+  useReliefYear(ya);
+  $('sYANote').textContent = `${ya} 年 1–12 月的花费 · ${+ya + 1} 年 4–5 月报税 · 建议保留至 ${+ya + 8} 年`
+    + (RELIEF_ACTIVE_YEAR !== +ya ? ` · ⚠ 还没有 YA${ya} 的条款，暂用 YA${RELIEF_ACTIVE_YEAR}` : ` · 使用 YA${ya} 条款`);
   $('sCats').innerHTML = '<p class="muted"><span class="spinner"></span> 载入中…</p>';
   try {
     await getToken();
@@ -511,7 +521,7 @@ function renderSettings() {
   $('cfgPayers').value = cfg.payers.join('\n');
   $('cfgBiz').value = (cfg.bizPayers || []).join('，');
   $('cfgMembers').value = cfg.members.join('\n'); $('cfgRoot').value = cfg.rootName;
-  $('reliefNote').textContent = RELIEF_YEAR_NOTE + ' · App 版本 ' + APP_VERSION;
+  $('reliefNote').textContent = '已存条款：' + Object.keys(RELIEF_YEARS).map((y) => 'YA' + y).join('、') + ' · ' + RELIEF_YEAR_NOTE + ' · App 版本 ' + APP_VERSION;
   $('setupHint').classList.toggle('hidden', !!(cfg.clientId && cfg.geminiKey));
 }
 
